@@ -1,0 +1,16 @@
+{
+  "name": "CQFD",
+  "short_name": "CQFD",
+  "description": "Les activités de Maël, Mathis, Sarah et Elsa : teasers, notes et élection de la meilleure sortie.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EFEBF7",
+  "theme_color": "#EFEBF7",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
