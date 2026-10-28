@@ -259,7 +259,7 @@ const S = {
   db:null, noDb:false, ready:false,
   acts:[], notes:[], votes:[], palm:[], cycle:1,
   me: lire('club4-moi'), tab: lire('club4-onglet') || 'accueil',
-  confirmClose:false, confirmDel:null,
+  confirmClose:false, confirmDel:null, attenteCode:null,
 };
 
 /* ============================================================
@@ -552,8 +552,18 @@ function confettis(){
 const modal = document.getElementById('modal'), sheet = document.getElementById('sheet');
 function ouvrir(html){ sheet.innerHTML = html; modal.hidden = false; const f = sheet.querySelector('input,button.x'); if(f) f.focus(); }
 function fermer(){ modal.hidden = true; sheet.innerHTML = ''; }
-modal.addEventListener('click', e => { if(e.target === modal) fermer(); });
-document.addEventListener('keydown', e => { if(e.key === 'Escape' && !modal.hidden && S.me) fermer(); });
+modal.addEventListener('click', e => { if(e.target === modal && !S.attenteCode) fermer(); });
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && !modal.hidden && S.me && !S.attenteCode) fermer(); });
+
+/* Le code du club : demandé une seule fois par téléphone, sinon la base refuse tout. */
+function ouvrirCode(){
+  ouvrir(`<div class="sheet-head"><h2>Code du club</h2></div>
+  <form id="f-code">
+    <p class="hint">Pour entrer, tape le code secret du club (demande-le à Maël). Ton téléphone s'en souviendra.</p>
+    <label for="f-secret">Code<input type="text" id="f-secret" required maxlength="60" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    <button class="btn primary full" type="submit">Entrer</button>
+  </form>`);
+}
 
 function ouvrirQui(){
   ouvrir(`<div class="sheet-head"><h2>Qui es-tu ?</h2>${S.me ? '<button class="x" data-act="close-modal" type="button" aria-label="Fermer">✕</button>' : ''}</div>
@@ -602,7 +612,7 @@ const trouver = id => S.acts.find(a => a.id === id);
 document.addEventListener('click', async e => {
   const t = e.target.closest('[data-tab]');
   if(t){ S.tab = t.dataset.tab; ecrire('club4-onglet', S.tab); S.confirmClose = false; S.confirmDel = null; render(); scrollTo(0,0); return; }
-  const b = e.target.closest('[data-act]'); if(!b) return;
+  const b = e.target.closest('[data-act]'); if(!b || S.attenteCode) return;
   const id = b.dataset.id, act = b.dataset.act;
 
   if(act === 'who') return ouvrirQui();
@@ -633,6 +643,15 @@ document.addEventListener('click', async e => {
 document.addEventListener('submit', async e => {
   e.preventDefault();
   const f = e.target;
+  if(f.id === 'f-code'){
+    const code = sheet.querySelector('#f-secret').value.trim().toLowerCase();
+    try{ await S.attenteCode.set({code, depuis:Date.now()}); }
+    catch(err){
+      return toast(err && err.code === 'permission-denied' ? 'Code incorrect.' : 'Impossible de vérifier le code, vérifie ta connexion.');
+    }
+    S.attenteCode = null; fermer(); entrer();
+    return;
+  }
   if(f.id === 'f-act'){
     const v = id => sheet.querySelector('#' + id).value.trim();
     const emo = sheet.querySelector('#f-emojis [aria-pressed="true"]');
@@ -691,7 +710,6 @@ function toast(msg){ const el = document.getElementById('toast'); el.textContent
    modifie quelque chose, la fonction reçoit la nouvelle liste et on redessine.
    ============================================================ */
 render();
-if(!S.me) ouvrirQui();
 
 // Le "service worker" garde l'appli en mémoire sur le téléphone pour qu'elle s'ouvre vite, même hors ligne.
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
@@ -705,6 +723,18 @@ if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch
   const db = firebase.firestore();
   try{ await db.enablePersistence(); }catch(e){}        // garde une copie sur le tel : l'appli s'ouvre même sans réseau
   S.db = db;
+  // La fiche membres/<id du téléphone> prouve qu'on a déjà donné le code du club.
+  const fiche = db.doc('membres/' + firebase.auth().currentUser.uid);
+  let dejaMembre = false;
+  try{ dejaMembre = (await fiche.get()).exists; }catch(e){}
+  if(dejaMembre) return entrer();
+  S.attenteCode = fiche;
+  ouvrirCode();
+})();
+
+function entrer(){
+  const db = S.db;
+  if(!S.me) ouvrirQui();
   const versListe = snap => snap.docs.map(d => ({id:d.id, ...d.data()}));
   const oups = () => toast('Connexion à la sauvegarde perdue. Recharge la page.');
   db.collection('activites').onSnapshot(s => { S.acts = versListe(s); S.ready = true; render(); }, oups);
@@ -712,7 +742,7 @@ if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch
   db.collection('votes').onSnapshot(s => { S.votes = versListe(s); render(); }, oups);
   db.collection('palmares').onSnapshot(s => { S.palm = versListe(s); render(); }, oups);
   db.doc('config/club').onSnapshot(d => { S.cycle = d.exists ? (d.data().cycle || 1) : 1; render(); }, oups);
-})();
+}
 </script>
 </body>
 </html>

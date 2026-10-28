@@ -1,12 +1,71 @@
 rules_version = '2';
 // Règles de sécurité de la base CQFD : à coller dans Firebase > Firestore > Règles.
-// Seules les personnes passées par l'appli (connexion anonyme) peuvent lire et écrire,
-// et seulement dans les 5 collections de l'appli.
+//
+// Le dépôt GitHub est public : ce fichier garde donc CODE_DU_CLUB à la place du vrai code.
+// La version à coller (avec le vrai code) est dans firestore.rules.prive, qui n'est pas publié.
+//
+// Fonctionnement : la connexion anonyme ne suffit plus. Chaque téléphone doit d'abord
+// créer sa fiche membres/<son id> en donnant le bon code du club. Ensuite seulement,
+// il peut lire et écrire dans les 5 collections de l'appli.
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{coll}/{id} {
-      allow read, write: if request.auth != null
-        && coll in ['activites', 'notes', 'votes', 'palmares', 'config'];
+
+    function membre() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/membres/$(request.auth.uid));
+    }
+    function ami(v) { return v in ['mael', 'mathis', 'sarah', 'elsa']; }
+    function texte(v, max) { return v is string && v.size() <= max; }
+
+    // La fiche d'entrée : on ne peut créer que la sienne, et seulement avec le bon code.
+    match /membres/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['code', 'depuis'])
+        && request.resource.data.code == 'CODE_DU_CLUB';
+    }
+
+    match /activites/{id} {
+      allow read, delete: if membre();
+      allow create, update: if membre()
+        && texte(request.resource.data.titre, 80) && request.resource.data.titre.size() > 0
+        && texte(request.resource.data.date, 10)
+        && texte(request.resource.data.get('lieu', ''), 120)
+        && texte(request.resource.data.get('prevoir', ''), 140)
+        && ami(request.resource.data.organisateur)
+        && request.resource.data.get('indices', []) is list
+        && request.resource.data.get('indices', []).size() <= 3;
+    }
+
+    // Une note par personne et par activité : l'id doit être "<activité>__<personne>".
+    match /notes/{id} {
+      allow read, delete: if membre();
+      allow create, update: if membre()
+        && ami(request.resource.data.personne)
+        && id == request.resource.data.activite + '__' + request.resource.data.personne
+        && request.resource.data.note is int
+        && request.resource.data.note >= 1 && request.resource.data.note <= 10
+        && texte(request.resource.data.get('mot', ''), 200);
+    }
+
+    // Un coup de cœur par personne et par cycle : l'id doit être "c<cycle>__<personne>".
+    match /votes/{id} {
+      allow read, delete: if membre();
+      allow create, update: if membre()
+        && ami(request.resource.data.personne)
+        && id == 'c' + string(request.resource.data.cycle) + '__' + request.resource.data.personne;
+    }
+
+    match /palmares/{id} {
+      allow read, write: if membre();
+    }
+
+    // Le numéro du cycle en cours : un nombre entier, rien d'autre.
+    match /config/{id} {
+      allow read: if membre();
+      allow write: if membre() && id == 'club'
+        && request.resource.data.keys().hasOnly(['cycle'])
+        && request.resource.data.cycle is int && request.resource.data.cycle >= 1;
     }
   }
 }
